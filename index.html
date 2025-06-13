@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Secure API Chat</title>
+  <title>Secure Portkey AI Chat</title>
   <style>
     * {
       box-sizing: border-box;
@@ -83,6 +83,14 @@
       background-color: #ffffff;
       border: 1px solid #e5e7eb;
       border-bottom-left-radius: 0.25rem;
+    }
+
+    .error-message {
+      align-self: center;
+      background-color: #fee2e2;
+      border: 1px solid #ef4444;
+      color: #b91c1c;
+      width: 90%;
     }
 
     .message-content {
@@ -193,6 +201,44 @@
       font-size: 0.875rem;
     }
 
+    .debug-panel {
+      background-color: #f3f4f6;
+      border-top: 1px solid #e5e7eb;
+      padding: 1rem;
+      font-family: monospace;
+      font-size: 0.875rem;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .debug-panel.active {
+      display: block;
+    }
+
+    .debug-entry {
+      margin-bottom: 0.5rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px dashed #d1d5db;
+    }
+
+    .debug-entry:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .debug-toggle {
+      background: none;
+      border: none;
+      color: #6b7280;
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 0.25rem 0.5rem;
+      margin-top: 0.5rem;
+      text-decoration: underline;
+    }
+
     @keyframes pulse {
       0%,
       50%,
@@ -238,16 +284,18 @@
         <h1>Secure AI Chat</h1>
       </div>
       <div class="api-key-form">
-        <h2>Enter Your API Key</h2>
+        <h2>Enter Your Portkey API Key</h2>
         <p>Your API key is stored only in memory and never saved to disk.</p>
         <div class="info-box">
           <strong>Security Note:</strong> Your API key will be used only for this session and will not be stored permanently.
+          <br><br>
+          <strong>Portkey API Key:</strong> This app is designed for Portkey API keys (starting with "sk-proj-").
         </div>
         <input 
           type="password" 
           id="api-key-input" 
           class="api-key-input" 
-          placeholder="Enter your OpenAI API key"
+          placeholder="Enter your Portkey API key (sk-proj-...)"
         />
         <button id="start-chat-btn" class="button">Start Chat</button>
       </div>
@@ -276,6 +324,9 @@
         />
         <button class="button" type="submit" id="send-button">Send</button>
       </form>
+      
+      <div class="debug-panel" id="debug-panel"></div>
+      <button class="debug-toggle" id="debug-toggle">Show Debug Info</button>
     </div>
   </div>
 
@@ -290,10 +341,45 @@
       const userInput = document.getElementById("user-input");
       const chatMessages = document.getElementById("chat-messages");
       const sendButton = document.getElementById("send-button");
+      const debugPanel = document.getElementById("debug-panel");
+      const debugToggle = document.getElementById("debug-toggle");
 
       // Variables
       let apiKey = null;
       const messages = [];
+      let debugMode = false;
+
+      // Debug mode
+      debugToggle.addEventListener("click", () => {
+        debugMode = !debugMode;
+        debugPanel.classList.toggle("active");
+        debugToggle.textContent = debugMode ? "Hide Debug Info" : "Show Debug Info";
+      });
+      
+      // Log to debug panel
+      function logDebug(message, data = null) {
+        const entry = document.createElement("div");
+        entry.className = "debug-entry";
+        
+        const timestamp = new Date().toLocaleTimeString();
+        let content = `[${timestamp}] ${message}`;
+        
+        if (data) {
+          try {
+            if (typeof data === "object") {
+              content += `<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            } else {
+              content += `<br>${data}`;
+            }
+          } catch (e) {
+            content += "<br>[Error stringifying data]";
+          }
+        }
+        
+        entry.innerHTML = content;
+        debugPanel.appendChild(entry);
+        debugPanel.scrollTop = debugPanel.scrollHeight;
+      }
 
       // Check for API key in URL fragment
       function checkUrlForApiKey() {
@@ -318,8 +404,9 @@
         if (key) {
           apiKey = key;
           showChatInterface();
+          logDebug("Chat initialized with user-provided API key");
         } else {
-          alert("Please enter your API key");
+          alert("Please enter your Portkey API key");
         }
       });
 
@@ -332,7 +419,7 @@
       }
 
       // Add a message to the chat UI
-      function addMessage(content, isUser = false) {
+      function addMessage(content, isUser = false, isError = false) {
         // Remove welcome message if it exists
         const welcomeMessage = document.querySelector(".welcome-message");
         if (welcomeMessage) {
@@ -340,7 +427,7 @@
         }
 
         const messageDiv = document.createElement("div");
-        messageDiv.className = `message ${isUser ? "user-message" : "ai-message"}`;
+        messageDiv.className = `message ${isUser ? "user-message" : isError ? "error-message" : "ai-message"}`;
 
         const messageContent = document.createElement("div");
         messageContent.className = "message-content";
@@ -352,11 +439,13 @@
         // Scroll to bottom
         chatMessages.scrollTop = chatMessages.scrollHeight;
 
-        // Add to messages array
-        messages.push({
-          role: isUser ? "user" : "assistant",
-          content: content,
-        });
+        // Add to messages array (only if not an error)
+        if (!isError) {
+          messages.push({
+            role: isUser ? "user" : "assistant",
+            content: content,
+          });
+        }
       }
 
       // Show typing indicator
@@ -392,10 +481,10 @@
         }
       }
 
-      // Send message to API
-      async function sendMessageToAPI(userMessage) {
+      // Send message to API using Portkey
+      async function sendMessageToPortkey(userMessage) {
         if (!apiKey) {
-          addMessage("Error: API key is missing. Please reload the page and enter your API key.", false);
+          addMessage("Error: API key is missing. Please reload the page and enter your API key.", false, true);
           return;
         }
 
@@ -404,11 +493,15 @@
           sendButton.disabled = true;
           userInput.disabled = true;
 
-          const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          logDebug("Sending request to Portkey API");
+          
+          // Using Portkey API
+          const response = await fetch("https://api.portkey.ai/v1/chat/completions", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
+              "x-portkey-api-key": apiKey,
+              "x-portkey-provider": "openai",
             },
             body: JSON.stringify({
               model: "gpt-3.5-turbo",
@@ -417,23 +510,26 @@
             }),
           });
 
-          if (!response.ok) {
-            throw new Error(`API request failed with status ${response.status}`);
-          }
-
-          const data = await response.json();
+          const responseData = await response.json();
+          logDebug("Received response", responseData);
+          
           removeTypingIndicator();
 
-          if (data.choices && data.choices.length > 0) {
-            const aiResponse = data.choices[0].message.content;
+          if (!response.ok) {
+            throw new Error(`API request failed: ${responseData.error?.message || response.statusText}`);
+          }
+
+          if (responseData.choices && responseData.choices.length > 0) {
+            const aiResponse = responseData.choices[0].message.content;
             addMessage(aiResponse);
           } else {
-            throw new Error("No response from API");
+            throw new Error("No response content from API");
           }
         } catch (error) {
           console.error("Error:", error);
+          logDebug("Error occurred", error.toString());
           removeTypingIndicator();
-          addMessage("Sorry, I encountered an error. Please check your API key and try again.");
+          addMessage(`Error: ${error.message}. Check the debug panel for more details.`, false, true);
         } finally {
           sendButton.disabled = false;
           userInput.disabled = false;
@@ -450,12 +546,13 @@
 
         // Add user message to chat
         addMessage(message, true);
+        logDebug("User message", message);
 
         // Clear input
         userInput.value = "";
 
         // Send to API
-        sendMessageToAPI(message);
+        sendMessageToPortkey(message);
       });
 
       // Enter key in API key input
@@ -468,3 +565,4 @@
   </script>
 </body>
 </html>
+
